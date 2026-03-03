@@ -24,7 +24,7 @@ curr_pilot_info <- pilot_pds |>
 #data path
 paths <- list.files(
   "Data",
-  str_glue("({curr_pilot_info$path_dates}|{curr_pilot_info$prior_path_dates})"),
+  # str_glue("({curr_pilot_info$path_dates}|{curr_pilot_info$prior_path_dates})"),
   full.names = TRUE
 )
 
@@ -106,6 +106,8 @@ df_lookup <- tribble(
   "ApplicantRestartedWithGenericLinkOnTimeout" , "initiation_generic_restart" ,
   "ApplicantViewedAgreement"                   , "started"                    ,
   "ApplicantSharedIncomeSummary"               , "completed"                  ,
+  "ApplicantAttemptedLogin"                    , "login_attempt"              ,
+  "ApplicantSucceededWithLogin"                , "login_success"              ,
   "ApplicantOpenedHelpModal"                   , "help"                       , #help_menu
   "ApplicantViewedHelpTopic"                   , "help"                       , #help_common
   "ApplicantSearchedForEmployer"               , "search"                     ,
@@ -141,7 +143,8 @@ df_ban <- df_ban |>
     share_complete = completed / started,
     share_tokenized = initiation_token /
       (initiation_generic + initiation_generic_restart + initiation_token),
-    share_search_missing = search_missing / search
+    share_search_missing = search_missing / search,
+    share_login_success = login_success / login_attempt
   ) |>
   rename_with(
     ~ paste0("n_", .x),
@@ -167,8 +170,8 @@ df_ban <- df_ban |>
       label_percent(1)(curr)
     ),
     icon = case_when(
-      str_detect(metric, "^n_") & delta > 0 ~ "bi-caret-up-fill",
-      str_detect(metric, "^n_") & delta < 0 ~ "bi-caret-down-fill",
+      delta > 0 ~ "bi-caret-up-fill",
+      delta < 0 ~ "bi-caret-down-fill",
       # TRUE ~ "bi-dash"
     ),
     text = case_when(
@@ -180,10 +183,10 @@ df_ban <- df_ban |>
       str_detect(metric, "^share") &
         between(delta_pct, -.005, .005) ~ "No change",
       str_detect(metric, "^n_") ~ str_glue(
-        '<i class="bi {icon}"></i> {label_comma(1)(abs(delta))}' # {text} than prior run
+        '<i class="bi {icon}"></i> {label_comma(1)(abs(delta))} from last run' # {text} than prior run
       ),
       str_detect(metric, "^share_") ~ str_glue(
-        '<i class="bi {icon}"></i> {label_percent(1)(abs(delta))} (points)' #points {text} than prior run
+        '<i class="bi {icon}"></i> {label_percent(1)(abs(delta))} points from last run' #points {text} than prior run
       ),
       TRUE ~ "No change"
     )
@@ -268,6 +271,41 @@ df_device_origin_status <- df_device_origin_status |>
   ) |>
   mutate(completion_rate = completed / started)
 
+#setup for viz
+df_device_origin_status <- df_device_origin_status |>
+  group_by(pilot, pilot_wk) |>
+  mutate(share = started / sum(started)) |>
+  ungroup() |>
+  mutate(
+    device_type = factor(
+      device_type,
+      c("desktop", "other", "unknown", "smartphone")
+    ),
+    completion_rate = label_percent(1)(completion_rate),
+    lab_share = label_percent(1)(share),
+    fill_color = case_when(
+      device_type == "smartphone" ~ dsac_light_teal,
+      device_type == "desktop" ~ dsac_light_navy,
+      TRUE ~ "#909090"
+    ),
+    lab_share = case_when(
+      device_type %in% c("smartphone", "desktop") ~ str_glue(
+        "{str_to_sentence(device_type)}\ndevice share: {lab_share}\ncompletion rate: {completion_rate}"
+      )
+    ),
+    lab_pos = case_when(
+      device_type == "smartphone" ~ -.02,
+      device_type == "desktop" ~ 1.02
+    ),
+    lab_hjust = case_when(
+      device_type == "smartphone" ~ 1,
+      device_type == "desktop" ~ 0
+    ),
+  ) |>
+  arrange(device_type) |>
+  mutate(fill_color = fct_inorder(fill_color))
+
+
 write_rds(df_device_origin_status, "Dataout/wkly_device_origin.rds")
 
 ###################
@@ -291,7 +329,7 @@ df_duration <- df_duration |>
   )
 
 df_duration <- df_duration |>
-  group_by(pilot, pilot_wk, metric, provider) |>
+  group_by(pilot, pilot_wk, metric) |> #provider
   summarise(
     n = n(),
     min = min(value, na.rm = TRUE),
@@ -304,44 +342,33 @@ df_duration <- df_duration |>
 
 write_rds(df_duration, "Dataout/wkly_duration.rds")
 
-# df_sync_bucketed <- df_sync |>
-#   mutate(
-#     sync_bucket =
-#       case_when(
-#         sync_duration_seconds <= 30 ~ "<=30s",
-#         sync_duration_seconds <= 60 ~ ">30s - 1m",
-#         sync_duration_seconds <= 180 ~ ">1m - 3m",
-#         sync_duration_seconds <= 300 ~ ">3m - 5m",
-#         sync_duration_seconds <= 600 ~ ">5m - 10m",
-#         TRUE ~ ">10m"
-#         ),
-#       sync_bucket = factor(sync_bucket, c("<=30s", ">30s - 1m", ">1m - 3m", ">3m - 5m", ">5m - 10m", ">10m"))
-#   ) |>
-#   count(pilot, pilot_wk, sync_bucket) |>
-#   arrange(pilot, sync_bucket) |>
-#   group_by(pilot) |>
-#   mutate(
-#     share = n / sum(n),
-#     cum_share = cumsum(n) / sum(n)
-#     ) |>
-#   ungroup()
 
-#   df_sync_bucketed |>
-#     ggplot(aes(n, fct_rev(sync_bucket), fill = sync_bucket)) +
-#     geom_col() +
-#     geom_text(
-#       aes(label = scales::label_percent(1)(share)),
-#       family = "Source Sans 3", hjust = -.1, color = "#505050",
-#       ) +
-#     facet_wrap(~pilot_wk) +
-#     coord_cartesian(clip = "off") +
-#     # scale_fill_manual(values = unname(c(dsac_color['teal'], dsac_color['dark_navy'], dsac_color['navy'], dsac_color['light_navy'], dsac_color['light_cranberry'], dsac_color['cranberry']))) +
-#     labs(
-#       x = NULL, y = NULL,
-#       title = "95% OF SYNC TIMES ARE UNDER THREE MINUTES",
-#       subtitle = "number of sessions' income sync time",
-#       # caption = default_caption
-#       ) +
-#     # si_style_xgrid() +
-#     theme(legend.position = "none")
-# #origin
+#falloff
+
+df_dropoff <- df |>
+  filter(event %in% key_events)
+
+df_dropoff <- df_dropoff |>
+  distinct(pilot, pilot_wk, distinct_id, event)
+
+df_dropoff <- df_dropoff |>
+  clean_events() |>
+  mutate(
+    pilot_rel = ifelse(pilot == pilot_latest, "curr", "prior"),
+    event_clean = factor(event_clean, key_events_clean)
+  ) |>
+  count(pilot_rel, pilot_wk, event_clean) |>
+  pivot_wider(names_from = pilot_rel, values_from = n)
+
+df_dropoff <- df_dropoff |>
+  group_by(pilot_wk) |>
+  mutate(
+    curr_lag = lag(curr),
+    loss_share = label_percent(1)(curr / curr_lag - 1)
+  ) |>
+  ungroup()
+
+df_dropoff <- df_dropoff |>
+  mutate(event_clean = fct_recode(event_clean, "Consented" = "Agreed"))
+
+write_rds(df_dropoff, "Dataout/wkly_dropoff.rds")
