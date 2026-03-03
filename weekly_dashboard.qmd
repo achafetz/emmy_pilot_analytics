@@ -23,6 +23,7 @@ library(here)
 library(scales)
 library(ggtext)
 library(glitr)
+library(htmltools)
 ```
 
 ```{r}
@@ -60,9 +61,24 @@ pilot_week <- df_duration |>
   pull() |>
   max()
 
+pilot_week_disp <- pilot_week
+
+
+pilot_week <- -1
+
+if (pilot_week == -1){
+
+  pilot_week_disp <- df_duration |>
+    filter(pilot == pilot_latest) |>
+    distinct(pilot_wk) |>
+    pull() |>
+    max()
+
+  pilot_week_disp <- str_glue("{pilot_week_disp} (cum.)")
+}
 ```
 
-This report documents week `r  pilot_week` of the `r unique(df_ban$pilot_state)` `r pilot_latest` Emmy pilot. For the this pilot run, `r scales::label_comma()(sum(df_ban[df_ban$metric == "n_invitation",]$curr, na.rm = TRUE))` invitiations were distributed to verify income. **All data points represent values reported in week `r pilot_week` and comparisions are against the same week of the `r pilot_prior` run.**
+This report documents week `r  pilot_week_disp` of the `r unique(df_ban$pilot_state)` `r pilot_latest` Emmy pilot. For the this pilot run, `r scales::label_comma()(sum(df_ban[df_ban$metric == "n_invitation",]$curr, na.rm = TRUE))` invitiations were distributed to verify income. **All data points represent values reported in week `r pilot_week_disp` and comparisions are against the same week of the `r pilot_prior` run.**
 
 ```{r}
 #| label: ban_setup
@@ -111,6 +127,15 @@ Successful Account Logins
 
 :::
 
+::: {.valuebox icon="collection" color="primary"}
+Multi Employer Submissions
+
+`r df_ban_wk |> filter(denom == "applicants", metric == "n_multi_employers") |> pull(val_fmt)`
+
+`r df_ban_wk |> filter(denom == "applicants", metric == "n_multi_employers") |> pull(text_fmt)`
+
+:::
+
 ::: {.valuebox icon="search" color="primary"}
 Missing Search Results
 
@@ -120,6 +145,14 @@ Missing Search Results
 
 :::
 
+::: {.valuebox icon="share" color="primary"}
+Copied Invitiation Link
+
+`r df_ban_wk |> filter(denom == "events", metric == "n_copied_invite") |> pull(val_fmt)`
+
+`r df_ban_wk |> filter(denom == "events", metric == "n_copied_invite") |> pull(text_fmt)`
+
+:::
 
 <!-- ::: {.valuebox icon="exclamation-triangle" color="light"}
 Errors Encountered
@@ -140,7 +173,7 @@ Errors Encountered
 
 ```{r}
 #| label: viz_funnel
-#| title: !expr paste0("Applicant Journey + Drop Off Rate [", pilot_latest, " Week ", pilot_week, "]")
+#| title: !expr paste0("Applicant Journey + Drop Off Rate [", pilot_latest, " Week ", pilot_week_disp, "]")
 #| fig-height: 3
 #| fig-wight: 10
 #| 
@@ -172,7 +205,7 @@ df_dropoff |>
 #### Row {height = "10%"}
 ```{r}
 #| label: viz_device
-#| title: !expr paste0("Device Type [", pilot_latest, " Week ", pilot_week, "]")
+#| title: !expr paste0("Device Type [", pilot_latest, " Week ", pilot_week_disp, "]")
 #| fig-height: 2
 #| fig-wight: 10
 
@@ -247,27 +280,29 @@ df_duration |>
 
 ```{r}
 #| label: viz_sync
-#| title: !expr paste0("Payroll Aggregator Sync Time, Seconds (median + 25%-75% range) [Week ", pilot_week, "]")
+#| title: !expr paste0("Sync Time with Payroll Aggregator, Seconds (median + 25%-75% range) [Week ", pilot_week_disp, "]")
 #| fig-width: 20
 #| fig-height: 6
 
 df_duration |> 
   filter(
     metric == "sync_duration_seconds",
-    pilot_wk == pilot_week) |> 
+    pilot_wk == pilot_week) |>
+  filter_out(is.na(employment_type)) |> 
   mutate(
     fill_color = ifelse(pilot == pilot_latest, dsac_light_navy, "#707070"),
-    pilot = str_glue('{pilot} (n = {label_comma()(n)})'),
-    # provider = str_glue('{provider} (n = {label_comma()(n)})')
+    # pilot = str_glue('{pilot} (n = {label_comma()(n)})'),
+    employment_type = str_glue('{employment_type} (n = {label_comma()(n)})')
     ) |> 
-  ggplot(aes(y = fct_rev(pilot), group = pilot, color = fill_color)) +
+  ggplot(aes(y = employment_type, group = employment_type, color = fill_color)) +
   geom_linerange(aes(xmin = q25, xmax = q75), linewidth = 4) +
   geom_point(aes(median), size = 12) +
   geom_text(
     aes(median, label = label_number(1, suffix = "s")(median)), 
     family = "Source Sans 3", 
     vjust = -1) +
-  # facet_grid(pilot ~. , switch = "y", scales = "free_y") +
+  # facet_wrap(fct_rev(pilot) ~. , strip.position = "top", scales = "free_y", ncol = 1) +
+  facet_grid(fct_rev(pilot) ~. , switch = "y", scales = "free_y") +
   scale_x_continuous(label = label_number(suffix = "s"), position = "top") +
   scale_color_identity() +
   coord_cartesian(clip = "off") + 

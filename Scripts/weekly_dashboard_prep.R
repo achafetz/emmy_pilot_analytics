@@ -37,6 +37,8 @@ df <- paths |>
       origin = properties$origin,
       sync_duration_seconds = properties$sync_duration_seconds,
       flow_started_seconds_ago = properties$flow_started_seconds_ago,
+      employer_name = properties$employment_employer_name,
+      employment_type = properties$employment_type,
       # flow_started_minutes_ago = properties$flow_started_seconds_ago / 60,
       applicant_only = FALSE,
       drop_prop = TRUE
@@ -72,7 +74,7 @@ pilot_prior <- pilot_pds |>
 ########
 # MANUAL CHANGE >>>>>>>>>>>>>>>>
 #######
-df <- df |> filter_out(pilot == "Feb 2026", pilot_wk > 2)
+# df <- df |> filter_out(pilot == "Feb 2026", pilot_wk > 2)
 
 #identify pilot week
 pilot_week <- df |>
@@ -80,6 +82,14 @@ pilot_week <- df |>
   distinct(pilot_wk) |>
   pull() |>
   max()
+
+#include a cumulative week coded -1
+df <- df |>
+  bind_rows(
+    df |>
+      filter(between(pilot_wk, 1, pilot_week)) |>
+      mutate(pilot_wk = -1)
+  )
 
 
 #header context
@@ -113,7 +123,9 @@ df_lookup <- tribble(
   "ApplicantSearchedForEmployer"               , "search"                     ,
   "ApplicantAccessedMissingResultsPage"        , "search_missing"             ,
   "ApplicantEncounteredError"                  , "error"                      ,
-  "CaseworkerInvitedApplicantToFlow"           , "invitation"
+  "CaseworkerInvitedApplicantToFlow"           , "invitation"                 ,
+  "ApplicantFinishedSync"                      , "synced"                     ,
+  "ApplicantCopiedInvitationLink"              , "copied_invite"
 )
 
 #subset to start and finish
@@ -137,6 +149,27 @@ df_ban <- df_ban |>
     values_fill = 0
   )
 
+#identify number of multi employer submissions
+df_multi <- df |>
+  filter(event == "ApplicantFinishedSync") |>
+  mutate(
+    employer_name = ifelse(
+      is.na(employer_name),
+      "[not captured]",
+      employer_name
+    )
+  ) |>
+  distinct(pilot_state, pilot, pilot_wk, distinct_id, employer_name) |>
+  count(pilot_state, pilot, pilot_wk, distinct_id, name = "submissions") |>
+  count(pilot_state, pilot, pilot_wk, submissions > 1) |>
+  filter(`submissions > 1` == TRUE) |>
+  mutate(denom = "applicants") |>
+  select(pilot_state, pilot, pilot_wk, denom, multi_employers = n)
+
+#merge on multi employer submissions
+df_ban <- df_ban |>
+  left_join(df_multi, by = join_by(pilot_state, pilot, pilot_wk, denom))
+
 #calculations
 df_ban <- df_ban |>
   mutate(
@@ -148,7 +181,14 @@ df_ban <- df_ban |>
   ) |>
   rename_with(
     ~ paste0("n_", .x),
-    .cols = c(started, error, starts_with("help"), invitation)
+    .cols = c(
+      started,
+      error,
+      starts_with("help"),
+      invitation,
+      copied_invite,
+      multi_employers
+    )
   ) |>
   select(pilot_state, pilot, pilot_wk, denom, matches("^(n|share)_"))
 
@@ -179,9 +219,7 @@ df_ban <- df_ban |>
       delta < 0 ~ "less"
     ),
     text_fmt = case_when(
-      str_detect(metric, "^n_") & between(delta_pct, -.5, .5) ~ "No change",
-      str_detect(metric, "^share") &
-        between(delta_pct, -.005, .005) ~ "No change",
+      between(delta_pct, -.005, .005) ~ "No change",
       str_detect(metric, "^n_") ~ str_glue(
         '<i class="bi {icon}"></i> {label_comma(1)(abs(delta))} from last run' # {text} than prior run
       ),
@@ -318,7 +356,7 @@ df_duration <- df |>
     # pilot %in% c(pilot_latest, pilot_prior),
     # pilot_wk == pilot_week
   ) |>
-  select(-c(device_type, origin))
+  select(-c(device_type, origin, employer_name, provider))
 
 #reshape
 df_duration <- df_duration |>
@@ -329,7 +367,7 @@ df_duration <- df_duration |>
   )
 
 df_duration <- df_duration |>
-  group_by(pilot, pilot_wk, metric) |> #provider
+  group_by(pilot, pilot_wk, metric, employment_type) |> #provider
   summarise(
     n = n(),
     min = min(value, na.rm = TRUE),
