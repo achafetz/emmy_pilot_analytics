@@ -1,0 +1,288 @@
+---
+title: "LOUISIANA EMMY PILOT ANALYTICS"
+logo: assets/logo-color.svg
+subtitle: "February 2025 Pilot | Week 2"
+format: 
+  dashboard:
+    fig-dpi: 150
+    theme: 
+      - default
+      - assets/custom_format.scss
+resources:
+  - assets/logo-color.svg
+---
+
+```{r}
+#| label: dependencies
+#| echo: false
+#| warning: false
+
+library(tidyverse)
+library(emmytics)
+library(here)
+library(scales)
+library(ggtext)
+library(glitr)
+```
+
+```{r}
+#| label: import
+#| echo: false
+
+df_ban <- read_rds(here("Dataout/wkly_ban.rds"))
+df_duration <- read_rds(here("Dataout/wkly_duration.rds"))
+df_device_origin <- read_rds(here("Dataout/wkly_device_origin.rds"))
+df_dropoff <- read_rds(here("Dataout/wkly_dropoff.rds"))
+```
+
+```{r}
+#| label: global_vars
+#| echo: false
+
+#identify the latest pilot
+df_duration <- df_duration |> 
+      dplyr::mutate(pilot = factor(pilot, unique(pilot_pds$pilot)))
+
+# pilot_latest <- return_latest_pilot(df_duration)
+pilot_latest <- "Feb 2026"
+
+#identify the prior pilot
+pilot_prior <- pilot_pds |>
+  filter(state == unique(df_ban$pilot_state)) |>
+  mutate(prior = lag(pilot)) |>
+  filter(pilot == pilot_latest) |>
+  pull()
+
+#identify pilot week
+pilot_week <- df_duration |>
+  filter(pilot == pilot_latest) |>
+  distinct(pilot_wk) |>
+  pull() |>
+  max()
+
+```
+
+This report documents week `r  pilot_week` of the `r unique(df_ban$pilot_state)` `r pilot_latest` Emmy pilot. For the this pilot run, `r scales::label_comma()(sum(df_ban[df_ban$metric == "n_invitation",]$curr, na.rm = TRUE))` invitiations were distributed to verify income. **All data points represent values reported in week `r pilot_week` and comparisions are against the same week of the `r pilot_prior` run.**
+
+```{r}
+#| label: ban_setup
+#| echo: false
+
+df_ban_wk <- df_ban |> 
+    filter(pilot_wk == pilot_week)
+
+```
+
+## Row {height="30%"}
+
+::: {.valuebox icon="play-circle" color="primary"}
+Income Verification Started
+
+`r df_ban_wk |> filter(denom == "applicants", metric == "n_started") |> pull(val_fmt)`
+
+`r df_ban_wk |> filter(denom == "applicants", metric == "n_started") |> pull(text_fmt)`
+
+:::
+
+::: {.valuebox icon="flag" color="primary"}
+Completion Rate
+
+`r df_ban_wk |> filter(denom == "applicants", metric == "share_complete") |> pull(val_fmt)`
+
+`r df_ban_wk |> filter(denom == "applicants", metric == "share_complete") |> pull(text_fmt)`
+
+:::
+
+::: {.valuebox icon="link-45deg" color="primary"}
+Tokenized Link Share
+
+`r df_ban_wk |> filter(denom == "events", metric == "share_tokenized") |> pull(val_fmt)`
+
+`r df_ban_wk |> filter(denom == "events", metric == "share_tokenized") |> pull(text_fmt)`
+
+:::
+
+::: {.valuebox icon="person-check" color="primary"}
+Successful Account Logins
+
+`r df_ban_wk |> filter(denom == "applicants", metric == "share_login_success") |> pull(val_fmt)`
+
+`r df_ban_wk |> filter(denom == "applicants", metric == "share_login_success") |> pull(text_fmt)`
+
+:::
+
+::: {.valuebox icon="search" color="primary"}
+Missing Search Results
+
+`r df_ban_wk |> filter(denom == "events", metric == "share_search_missing") |> pull(val_fmt)`
+
+`r df_ban_wk |> filter(denom == "events", metric == "share_search_missing") |> pull(text_fmt)`
+
+:::
+
+
+<!-- ::: {.valuebox icon="exclamation-triangle" color="light"}
+Errors Encountered
+
+`r df_ban_wk |> filter(denom == "events", metric == "n_error") |> pull(val_fmt)`
+
+`r df_ban_wk |> filter(denom == "events", metric == "n_error") |> pull(text_fmt)`
+
+::: -->
+
+
+
+## Row 
+
+### Column
+
+#### Row {height = "90%"}
+
+```{r}
+#| label: viz_funnel
+#| title: !expr paste0("Applicant Journey + Drop Off Rate [", pilot_latest, " Week ", pilot_week, "]")
+#| fig-height: 3
+#| fig-wight: 10
+#| 
+df_dropoff |> 
+  filter(pilot_wk == pilot_week) |> 
+  mutate(
+    event_clean_n = str_glue("{event_clean} (n = {label_number(scale_cut = cut_short_scale())(curr)})"),
+    event_clean_n = fct_inorder(event_clean_n)
+    ) |> 
+  ggplot(aes(curr, fct_rev(event_clean_n), group = pilot_wk)) +
+  geom_blank(aes(curr * 1.1)) +
+  geom_col(aes(curr_lag), alpha = .3, width = .8, fill = dsac_pale_navy, na.rm = TRUE) +
+  geom_errorbar(aes(xmin = curr_lag, xmax = curr_lag), color = dsac_pale_navy) +
+  geom_segment(
+    aes(x = curr_lag, xend = curr * 1.02), color = dsac_pale_navy, na.rm = TRUE, 
+    arrow = arrow(length = unit(.2, "cm"), type = "closed")) +
+  geom_col(fill = dsac_light_navy, width = .8, na.rm = TRUE) +
+  # geom_errorbar(aes(xmin = prior, xmax = prior), color = "#909090") +
+  geom_text(aes(x = curr_lag, label = loss_share), hjust = -.1, na.rm = TRUE, color = "#505050", family = "Source Sans 3", size = 5) +
+  scale_x_continuous(label = label_number(scale_cut = cut_short_scale()), position = "top", expand = c(.005,.005)) +
+  labs(x = NULL, y = NULL) +
+  theme_minimal(base_size = 18, base_family = "Source Sans 3") +
+    theme(
+    plot.margin = margin(4, 4, 4, 4),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_blank()
+    )
+```
+#### Row {height = "10%"}
+```{r}
+#| label: viz_device
+#| title: !expr paste0("Device Type [", pilot_latest, " Week ", pilot_week, "]")
+#| fig-height: 2
+#| fig-wight: 10
+
+df_device_origin_viz <- df_device_origin |> 
+  filter(
+    pilot == pilot_latest,
+    pilot_wk == pilot_week
+  ) 
+  
+ df_device_origin_viz |>
+  ggplot(aes(share, as.character(pilot_wk), fill = fill_color)) +
+  geom_col(width = .5) +
+  geom_text(
+    aes(x = lab_pos, label = lab_share, color = fill_color, 
+    hjust = lab_hjust), family = "Source Sans 3", #color = "#505050",
+    na.rm = TRUE
+  ) +
+  scale_x_continuous(limits = c(-.5, 1.5)) +
+  scale_fill_identity() +
+  scale_color_identity() +
+  labs(x = NULL, y = NULL) +
+  theme_void(base_size = 12) +
+  theme(
+    axis.text = element_blank(),
+    plot.margin = margin(4, 4, 4, 4)
+    )
+```
+
+### Column
+
+#### Row {height="40%"}
+
+```{r}
+#| label: viz_duration
+#| title: !expr paste0("Minutes to Successfully Complete Process (median + 25%-75% range) [Week ", pilot_week, "]")
+#| fig-width: 25
+#| fig-height: 6
+
+df_duration |> 
+  filter(
+    metric == "flow_started_minutes_ago",
+    pilot_wk == pilot_week) |> 
+  mutate(
+    fill_color = ifelse(pilot == pilot_latest, dsac_light_navy, "#707070"),
+    pilot = str_glue('{pilot} (n = {label_comma()(n)})')
+    ) |> 
+  ggplot(aes(y = fct_rev(pilot), group = pilot, color = fill_color)) +
+  geom_linerange(aes(xmin = q25, xmax = q75), linewidth = 6) +
+  geom_point(aes(median), size = 15) +
+  geom_text(
+    aes(median, label = label_number(.1, suffix = "m")(median)), 
+    family = "Source Sans 3",
+     vjust = -1) +
+  scale_x_continuous(label = label_number(.1, suffix = "m"), limits = c(0, NA), position = "top") +
+  scale_color_identity() +
+  coord_cartesian(clip = "off") + 
+  labs(x = NULL, y = NULL) +
+  theme_minimal(base_size = 60, base_family = "Source Sans 3") +
+  theme(
+    strip.placement = "outside",
+    strip.text = element_text(hjust = .5),
+    plot.subtitle = element_markdown(),
+    panel.spacing=unit(0.5, "lines"),
+    plot.margin = margin(4, 4, 4, 4),
+    axis.title = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_blank()
+    )
+```
+
+#### Row
+
+```{r}
+#| label: viz_sync
+#| title: !expr paste0("Payroll Aggregator Sync Time, Seconds (median + 25%-75% range) [Week ", pilot_week, "]")
+#| fig-width: 20
+#| fig-height: 6
+
+df_duration |> 
+  filter(
+    metric == "sync_duration_seconds",
+    pilot_wk == pilot_week) |> 
+  mutate(
+    fill_color = ifelse(pilot == pilot_latest, dsac_light_navy, "#707070"),
+    pilot = str_glue('{pilot} (n = {label_comma()(n)})'),
+    # provider = str_glue('{provider} (n = {label_comma()(n)})')
+    ) |> 
+  ggplot(aes(y = fct_rev(pilot), group = pilot, color = fill_color)) +
+  geom_linerange(aes(xmin = q25, xmax = q75), linewidth = 4) +
+  geom_point(aes(median), size = 12) +
+  geom_text(
+    aes(median, label = label_number(1, suffix = "s")(median)), 
+    family = "Source Sans 3", 
+    vjust = -1) +
+  # facet_grid(pilot ~. , switch = "y", scales = "free_y") +
+  scale_x_continuous(label = label_number(suffix = "s"), position = "top") +
+  scale_color_identity() +
+  coord_cartesian(clip = "off") + 
+  labs(x = NULL, y = NULL) +
+  theme_minimal(base_size = 40, base_family = "Source Sans 3") +
+  theme(
+    strip.placement = "outside",
+    strip.text = element_text(hjust = .5),
+    plot.subtitle = element_markdown(),
+    panel.spacing=unit(0.5, "lines"),
+    plot.margin = margin(4, 4, 4, 4),
+    axis.title = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_blank()
+    )
+```
+
+
