@@ -74,7 +74,7 @@ pilot_prior <- pilot_pds |>
 ########
 # MANUAL CHANGE >>>>>>>>>>>>>>>>
 #######
-# df <- df |> filter_out(pilot == "Feb 2026", pilot_wk > 2)
+df <- df |> filter_out(pilot == "Feb 2026", pilot_wk > 3)
 
 #identify pilot week
 pilot_week <- df |>
@@ -410,3 +410,79 @@ df_dropoff <- df_dropoff |>
   mutate(event_clean = fct_recode(event_clean, "Consented" = "Agreed"))
 
 write_rds(df_dropoff, "Dataout/wkly_dropoff.rds")
+
+
+#Viz
+
+df_daily <- df |>
+  filter(
+    # pilot == pilot_latest,
+    between(pilot_wk, 1, pilot_week),
+    event == "ApplicantViewedAgreement"
+  ) |>
+  group_by(pilot, pilot_wk) |>
+  mutate(week_total = n()) |>
+  ungroup() |>
+  mutate(
+    day = as_date(timestamp),
+    fill_color = ifelse(pilot_wk == pilot_week, dsac_light_teal, "#909090"),
+    pilot_wk = str_glue(
+      "Week {pilot_wk} [n = {label_number(scale_cut = cut_short_scale())(week_total)}]"
+    )
+  ) |>
+  count(pilot, pilot_wk, day, fill_color)
+
+v_sub <- df_daily |>
+  count(pilot, wt = n) |>
+  mutate(
+    pilot_cum = str_glue(
+      "{label_number(accuracy = 1, scale_cut = cut_short_scale())(n)} cum. in {pilot}"
+    )
+  ) |>
+  pull() |>
+  paste(collapse = " vs. ")
+
+df_daily |>
+  ggplot(aes(day, n, fill = fill_color)) +
+  geom_col() +
+  facet_wrap(
+    pilot ~ pilot_wk,
+    nrow = 2,
+    scales = "free_x",
+    labeller = labeller(.multi_line = FALSE)
+  ) +
+  # facet_wrap(~pilot_wk, space = "free_x", scales = "free_x") +
+  scale_x_date(date_breaks = "1 day", date_labels = "%m/%d") +
+  scale_y_continuous(label = label_number(scale_cut = cut_short_scale())) +
+  scale_fill_identity() +
+  labs(
+    x = NULL,
+    y = NULL,
+    title = toupper("Number of Income Verifications Initiated"),
+    subtitle = v_sub,
+  ) +
+  glitr::si_style_ygrid() +
+  theme(panel.spacing = unit(1, "lines"))
+
+glitr::si_save("Images/initations.png")
+
+
+#submissions
+df |>
+  filter(
+    pilot == pilot_latest,
+    pilot_week > 0,
+    event %in% c("ApplicantViewedAgreement", "ApplicantSharedIncomeSummary")
+  ) |>
+  group_by(pilot, event) |>
+  summarise(
+    applicants = n_distinct(distinct_id),
+    events = n(),
+    .groups = "drop"
+  ) |>
+  pivot_longer(c(applicants, events), names_to = "denom") |>
+  pivot_wider(
+    names_from = event,
+    values_fill = 0
+  ) |>
+  mutate(share = ApplicantSharedIncomeSummary / ApplicantViewedAgreement)
