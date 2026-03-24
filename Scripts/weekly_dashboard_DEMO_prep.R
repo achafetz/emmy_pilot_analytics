@@ -1,7 +1,7 @@
 library(tidyverse)
 library(emmytics)
 library(glue)
-library(scales, warn.conflicts = FALSE)
+library(scales)
 library(here)
 
 #get new data
@@ -18,8 +18,8 @@ curr_pilot_info <- pilot_pds |>
   select(start_date, api_end, client_agency, path_dates, prior_path_dates)
 
 #access data
-curr_pilot_info |>
-  pmap(~ get_mixpanel_data(..1, ..2, ..3, cache_dir = "Data"))
+# curr_pilot_info |>
+#   pmap(~ get_mixpanel_data(..1, ..2, ..3, cache_dir = "Data"))
 
 #data path
 paths <- list.files(
@@ -46,6 +46,7 @@ df <- paths |>
   ) |>
   list_rbind()
 
+
 #clean up col types
 df <- df |>
   mutate(
@@ -61,20 +62,59 @@ df <- df |>
 # add pilot week
 df <- add_pilot_week(df)
 
+
+#mask ############################################
+set.seed(42)
+v_ids <- unique(df$distinct_id)
+v_ids <- sample(v_ids, floor(length(v_ids) * .6))
+
+df_copies <- df |>
+  filter(distinct_id %in% v_ids) |>
+  mutate(
+    distinct_id = paste0(distinct_id, "-c"),
+    cbv_flow_id = cbv_flow_id + 1e6
+  )
+
+df <- bind_rows(df, df_copies)
+
+df <- df |>
+  mutate(timestamp = timestamp %m+% days(180) %m+% years(24))
+
+df <- df |>
+  group_by(pilot) |>
+  mutate(pilot = timestamp |> as_date() |> min() |> format("%b %Y")) |>
+  ungroup() |>
+  mutate(pilot = fct_inorder(pilot))
+
+df <- df |>
+  mutate(pilot_state = "North Grouchland")
+
+# df |>
+#   group_by(pilot) |>
+#   summarise(
+#     min = min(as_date(timestamp)),
+#     max = max(as_date(timestamp)),
+#   )
+
+############################################
+
 #identify the latest pilot
-pilot_latest <- return_latest_pilot(df)
+# pilot_latest <- return_latest_pilot(df)
+pilot_latest <- levels(df$pilot)[2]
 
 #identify the prior pilot
-pilot_prior <- pilot_pds |>
-  filter(state == unique(df$pilot_state)) |>
-  mutate(prior = lag(pilot)) |>
-  filter(pilot == pilot_latest) |>
-  pull()
+# pilot_prior <- pilot_pds |>
+#   filter(state == unique(df$pilot_state)) |>
+#   mutate(prior = lag(pilot)) |>
+#   filter(pilot == pilot_latest) |>
+#   pull()
+pilot_prior <- levels(df$pilot)[1]
+
 
 ########
 # MANUAL CHANGE >>>>>>>>>>>>>>>>
 #######
-# df <- df |> filter_out(pilot == "Feb 2026", pilot_wk > 4)
+# df <- df |> filter_out(pilot == "Feb 2026", pilot_wk > 2)
 
 #identify pilot week
 pilot_week <- df |>
@@ -231,7 +271,7 @@ df_ban <- df_ban |>
   )
 
 #export
-write_rds(df_ban, "Dataout/wkly_ban.rds")
+write_rds(df_ban, "Dataout/wkly_ban_mask.rds")
 
 ###################
 ###################
@@ -344,7 +384,7 @@ df_device_origin_status <- df_device_origin_status |>
   mutate(fill_color = fct_inorder(fill_color))
 
 
-write_rds(df_device_origin_status, "Dataout/wkly_device_origin.rds")
+write_rds(df_device_origin_status, "Dataout/wkly_device_origin_mask.rds")
 
 ###################
 ###################
@@ -378,7 +418,7 @@ df_duration <- df_duration |>
     .groups = "drop"
   )
 
-write_rds(df_duration, "Dataout/wkly_duration.rds")
+write_rds(df_duration, "Dataout/wkly_duration_mask.rds")
 
 
 #falloff
@@ -409,80 +449,4 @@ df_dropoff <- df_dropoff |>
 df_dropoff <- df_dropoff |>
   mutate(event_clean = fct_recode(event_clean, "Consented" = "Agreed"))
 
-write_rds(df_dropoff, "Dataout/wkly_dropoff.rds")
-
-
-#Viz
-
-df_daily <- df |>
-  filter(
-    # pilot == pilot_latest,
-    between(pilot_wk, 1, pilot_week),
-    event == "ApplicantViewedAgreement"
-  ) |>
-  group_by(pilot, pilot_wk) |>
-  mutate(week_total = n()) |>
-  ungroup() |>
-  mutate(
-    day = as_date(timestamp),
-    fill_color = ifelse(pilot_wk == pilot_week, dsac_light_teal, "#909090"),
-    pilot_wk = str_glue(
-      "Week {pilot_wk} [n = {label_number(scale_cut = cut_short_scale())(week_total)}]"
-    )
-  ) |>
-  count(pilot, pilot_wk, day, fill_color)
-
-v_sub <- df_daily |>
-  count(pilot, wt = n) |>
-  mutate(
-    pilot_cum = str_glue(
-      "{label_number(accuracy = 1, scale_cut = cut_short_scale())(n)} cum. in {pilot}"
-    )
-  ) |>
-  pull() |>
-  paste(collapse = " vs. ")
-
-df_daily |>
-  ggplot(aes(day, n, fill = fill_color)) +
-  geom_col() +
-  facet_wrap(
-    pilot ~ pilot_wk,
-    nrow = 2,
-    scales = "free_x",
-    labeller = labeller(.multi_line = FALSE)
-  ) +
-  # facet_wrap(~pilot_wk, space = "free_x", scales = "free_x") +
-  scale_x_date(date_breaks = "1 day", date_labels = "%m/%d") +
-  scale_y_continuous(label = label_number(scale_cut = cut_short_scale())) +
-  scale_fill_identity() +
-  labs(
-    x = NULL,
-    y = NULL,
-    title = toupper("Number of Income Verifications Initiated"),
-    subtitle = v_sub,
-  ) +
-  glitr::si_style_ygrid() +
-  theme(panel.spacing = unit(1, "lines"))
-
-glitr::si_save("Images/initations.png")
-
-
-#submissions
-df |>
-  filter(
-    pilot == pilot_latest,
-    pilot_week > 0,
-    event %in% c("ApplicantViewedAgreement", "ApplicantSharedIncomeSummary")
-  ) |>
-  group_by(pilot, event) |>
-  summarise(
-    applicants = n_distinct(distinct_id),
-    events = n(),
-    .groups = "drop"
-  ) |>
-  pivot_longer(c(applicants, events), names_to = "denom") |>
-  pivot_wider(
-    names_from = event,
-    values_fill = 0
-  ) |>
-  mutate(share = ApplicantSharedIncomeSummary / ApplicantViewedAgreement)
+write_rds(df_dropoff, "Dataout/wkly_dropoff_mask.rds")

@@ -1,7 +1,7 @@
 ---
 title: "LOUISIANA EMMY PILOT ANALYTICS"
 logo: assets/logo-color.svg
-subtitle: "February 2026 Pilot | Week 3"
+subtitle: "February 2026 Pilot | Week 5"
 format: 
   dashboard:
     fig-dpi: 150
@@ -63,7 +63,7 @@ pilot_week <- df_duration |>
 
 pilot_week_disp <- pilot_week
 
-# pilot_week <- -1
+pilot_week <- -1
 
 if (pilot_week == -1){
 
