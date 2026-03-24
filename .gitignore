@@ -31,6 +31,7 @@
 *.dta
 *.shp
 *.dbf
+*.html
 
 #nothing from these folders
 AI/*
@@ -39,3 +40,4 @@ Images/*
 Graphics/*
 Data/*
 Dataout/*
+*_files/*
