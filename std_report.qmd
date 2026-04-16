@@ -19,6 +19,7 @@ format:
             \usepackage{fancyhdr}
             \usepackage{graphicx}
             \definecolor{footergray}{HTML}{888888}
+            \definecolor{subtletext}{HTML}{505050}
             \setmainfont{Source Sans 3}
             \setsansfont{Source Sans 3}
             \renewcommand{\familydefault}{\sfdefault}
@@ -81,7 +82,7 @@ df_searches_top <- read_parquet("Dataout/report_searches.parquet")
 
 ```{r}
 #| label: ban-table
-#| fig-height: 1.6
+#| fig-height: 1.4
 #| fig-width:  7
 #| out-width: "100%"
 
@@ -130,13 +131,29 @@ ggplot(df_ban) +
 
 ```{r}
 #| label: daily_trend
-#| fig-height: 3.9
+#| fig-height: 3.7
 #| fig-width: 7
+
+# Build weekend highlight rectangles
+weekends <- df_trend |>
+  distinct(date) |>
+  filter(weekdays(date) %in% c("Saturday", "Sunday")) |>
+  mutate(
+    xmin = date - 0.5,
+    xmax = date + 0.5
+  )
 
 df_trend |> 
     ggplot(aes(date, n)) +
+    geom_rect(
+      data = weekends,
+      aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
+      inherit.aes = FALSE,
+      fill = "gray90",
+      alpha = 0.6
+    ) +
     geom_col(width = .8, fill = dsac_light_navy) +
-    # geom_text(aes(label = n), color = "#505050", family = "Source Sans 3", size = 7/.pt, vjust = -1) +
+    geom_text(aes(label = n), color = "#606060", family = "Source Sans 3", size = 7/.pt, vjust = -1) +
     facet_wrap(~event, ncol = 1, scales = "free_y") +
     scale_y_continuous(position = "left") +
     coord_cartesian(clip = "off") +
@@ -145,6 +162,7 @@ df_trend |>
     theme(
       panel.grid.minor = element_blank(),
       panel.grid.major.x =  element_blank(),
+      axis.text.y = element_blank(),
       strip.text = element_text(face = "bold", size = 12, hjust = 0)
     )
 
@@ -172,10 +190,15 @@ df_dropoff |>
     arrow = arrow(length = unit(.2, "cm"), type = "closed")) +
   geom_col(fill = dsac_light_navy, width = .8, na.rm = TRUE) +
   # geom_errorbar(aes(xmin = prior, xmax = prior), color = "#909090") +
-  geom_text(aes(x = n_lag, label = loss_share), hjust = -.1, na.rm = TRUE, color = "#505050", 
-#   family = "Source Sans 3", 
-  size = 5) +
-  scale_x_continuous(label = label_number(scale_cut = cut_short_scale()), position = "top", expand = c(.005,.005)) +
+  geom_text(
+    aes(x = n_lag, label = loss_share), 
+    hjust = -.1, na.rm = TRUE, color = "#505050", 
+    family = "Source Sans 3", size = 4
+    ) +
+  scale_x_continuous(
+    label = label_number(scale_cut = cut_short_scale()), 
+    position = "top", expand = c(.005,.005)
+    ) +
   labs(
     x = NULL, y = NULL,
     title = "Applicant Journey"
@@ -226,9 +249,9 @@ ggplot(tbl_data) +
   # ── Header labels (single row — use annotate) ───────────────────────────
   annotate("text", x = 0.02, y = header_y, label = "Metric",
     hjust = 0, family = "Source Sans 3", fontface = "bold", color = "white", size = 5) +
-  annotate("text", x = 0.78, y = header_y, label = "Curr. Month",
+  annotate("text", x = 0.78, y = header_y, label = "Curr.",
     hjust = 0, family = "Source Sans 3", fontface = "bold", color = "white", size = 5) +
-  annotate("text", x = 0.93, y = header_y, label = "Last Month",
+  annotate("text", x = 0.93, y = header_y, label = "Prior",
     hjust = 0, family = "Source Sans 3", fontface = "bold", color = "white", size = 5) +
   # ── Data rows (data-driven, geom_text fine here) ────────────────────────
   geom_text(aes(x = 0.02, y = y, label = metric_clean), na.rm = TRUE,
@@ -267,9 +290,13 @@ v_fail <- df_searches_top |>
 
 cat(
   str_glue(
-    "**Top Searches Where Applicant Selected Employer**: {v_found}",
+    "**Top Searches Where Applicant Selected Employer**:",
     "\n\n",
-    "**Top Searches Where Applicant Failed to Find Employer**: {v_fail}"
+    "\\textcolor{{subtletext}}{{\\small {v_found}}}",
+    "\n\n",
+    "**Top Searches Where Applicant Failed to Find Employer**:",
+    "\n\n",
+    "\\textcolor{{subtletext}}{{\\small {v_fail}}}"
     )
 )
 
@@ -279,6 +306,6 @@ cat(
 #| label: footer_text
 #| results: asis
 cat(str_glue(
-  "\\fancyfoot[R]{{\\color{{footergray}}\\small Data Source: Emmy Mixpanel Web Analytics Platform $\\vert$ {df_pd$period} $\\vert$ Digital Services at CMS $\\vert$ Generated: {Sys.Date()}}}"
+  "\\fancyfoot[R]{{\\color{{footergray}}\\small Data Source: Emmy Mixpanel Web Analytics Platform $\\vert$ {df_pd$period} $\\vert$ Digital Services at CMS $\\vert$ Generated: {format.Date(Sys.time(), '%Y-%m-%d %R')}}}"
 ))
 ```

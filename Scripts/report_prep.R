@@ -16,7 +16,7 @@ library(systemfonts)
 library(tidytext)
 library(patchwork)
 library(ggtext)
-library(arrow)
+library(arrow, warn.conflicts = FALSE)
 
 
 # GLOBAL VARIABLES --------------------------------------------------------
@@ -335,8 +335,8 @@ write_parquet(df_ban, "Dataout/report_ban.parquet")
 df_lookup_trend <- tribble(
   ~from                              , ~to                              ,
   "CaseworkerInvitedApplicantToFlow" , "Invitations Sent to Applicants" ,
-  "ApplicantViewedAgreement"         , "Applicants Viewing Agreement"   ,
-  "ApplicantSharedIncomeSummary"     , "Applicants Sharing Summary"
+  "ApplicantViewedAgreement"         , "Emmy Sessions Started"          ,
+  "ApplicantSharedIncomeSummary"     , "Emmy Sessions Completed"
 )
 
 df_trend <- df_mp |>
